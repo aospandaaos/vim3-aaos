@@ -1,0 +1,170 @@
+From bca2c774e1e9fd55b695ca9b1b561a0f5c2c7658 Mon Sep 17 00:00:00 2001
+From: Chris Simmnonds <chris@2net.co.uk>
+Date: Sun, 23 Jun 2024 20:11:08 +0100
+Subject: [PATCH 1/2] Added option TARGET_AUTOMOTIVE
+
+Change-Id: Ia8fbdfc3e886accfef4f9f4da33a7e628c26c9f7
+---
+ device-common.mk | 113 ++++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 86 insertions(+), 27 deletions(-)
+
+diff --git a/device-common.mk b/device-common.mk
+index 6e429b4..c3ef250 100644
+--- a/device-common.mk
++++ b/device-common.mk
+@@ -18,16 +18,98 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/emulated_storage.mk)
+ 
+ DEVICE_PACKAGE_OVERLAYS := device/amlogic/yukawa/overlay
+-ifeq ($(TARGET_USE_TABLET_LAUNCHER), true)
+-# Setup tablet build
++
++
++ifeq ($(TARGET_AUTOMOTIVE), true)
++######## Automotive specific config
++
++PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=160
++# Exclude features that are not available on AOSP devices.
++PRODUCT_COPY_FILES += \
++    frameworks/native/data/etc/aosp_excluded_hardware.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/aosp_excluded_hardware.xml
++$(call inherit-product, packages/services/Car/car_product/build/car.mk)
++
++################################################
++# Begin general Android Auto Embedded configurations
++
++PRODUCT_COPY_FILES += \
++    packages/services/Car/car_product/init/init.bootstat.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.bootstat.rc \
++    packages/services/Car/car_product/init/init.car.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.car.rc
++
++ifneq ($(LOCAL_SENSOR_FILE_OVERRIDES),true)
++    PRODUCT_COPY_FILES += \
++        frameworks/native/data/etc/android.hardware.sensor.accelerometer.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.sensor.accelerometer.xml \
++        frameworks/native/data/etc/android.hardware.sensor.compass.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.sensor.compass.xml
++endif
++
++PRODUCT_COPY_FILES += \
++    frameworks/native/data/etc/car_core_hardware.xml:system/etc/permissions/car_core_hardware.xml \
++    frameworks/native/data/etc/android.hardware.bluetooth.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.bluetooth.xml \
++    frameworks/native/data/etc/android.hardware.broadcastradio.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.broadcastradio.xml \
++    frameworks/native/data/etc/android.hardware.faketouch.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.faketouch.xml \
++    frameworks/native/data/etc/android.hardware.screen.landscape.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.screen.landscape.xml \
++    frameworks/native/data/etc/android.software.activities_on_secondary_displays.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.activities_on_secondary_displays.xml \
++
++# Broadcast Radio
++PRODUCT_PACKAGES += android.hardware.broadcastradio@2.0-service
++
++# AudioControl HAL
++#ifeq ($(LOCAL_AUDIOCONTROL_HAL_PRODUCT_PACKAGE),)
++    LOCAL_AUDIOCONTROL_HAL_PRODUCT_PACKAGE := android.hardware.automotive.audiocontrol-service.example
++    BOARD_SEPOLICY_DIRS += device/google/cuttlefish/shared/auto/sepolicy/audio
++#endif
++#PRODUCT_PACKAGES += $(LOCAL_AUDIOCONTROL_HAL_PRODUCT_PACKAGE)
++
++# CAN bus HAL
++PRODUCT_PACKAGES += android.hardware.automotive.can@1.0-service
++PRODUCT_PACKAGES_DEBUG += canhalctrl \
++    canhaldump \
++    canhalsend
++
++# VHAL
++PRODUCT_PACKAGES += android.hardware.automotive.vehicle@2.0-default-service
++
++BOARD_IS_AUTOMOTIVE := true
++
++# librs_jni is needed, but usually included via handheld_system.mk which automotive does not have
++PRODUCT_PACKAGES += \
++    librs_jni
++# Without handheld_system.mk, we need explicitly inherit here
++$(call inherit-product, frameworks/base/data/fonts/fonts.mk)
++
++else ifeq ($(TARGET_USE_TABLET_LAUNCHER), true)
++######## Tablet specific config
++PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
+ $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
+ # Packages to invoke RC pairing
+ PRODUCT_PACKAGES += YukawaService YukawaAndroidOverlay
++PRODUCT_PACKAGES += Launcher3QuickStep
++
+ else
+-# Setup TV Build
++######## TV specific config
++PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
+ USE_OEM_TV_APP := true
+ $(call inherit-product, device/google/atv/products/atv_base.mk)
++
++# CEC
++PRODUCT_PACKAGES += \
++    android.hardware.tv.cec@1.0-impl \
++    android.hardware.tv.cec@1.0-service \
++    hdmi_cec.yukawa
++
++PRODUCT_PACKAGES += \
++    TvSampleLeanbackLauncher \
++    LiveTv \
++    google-tv-pairing-protocol \
++    LeanbackSampleApp \
++    tv_input.default \
++    com.android.media.tv.remoteprovider \
++    InputDevices
++
++PRODUCT_PACKAGES += \
++    LeanbackIME
++
+ PRODUCT_CHARACTERISTICS := tv
+ PRODUCT_AAPT_PREF_CONFIG := tvdpi
+ PRODUCT_IS_ATV := true
+@@ -139,26 +221,6 @@ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/binaries/bt-wifi-firmware/nvram_ap6359.txt:$(TARGET_COPY_OUT_VENDOR)/firmware/brcm/nvram.txt
+ endif
+ 
+-ifeq ($(TARGET_USE_TABLET_LAUNCHER), true)
+-# Use Launcher3QuickStep
+-PRODUCT_PACKAGES += Launcher3QuickStep
+-else
+-ifeq ($(TARGET_USE_SAMPLE_LAUNCHER), true)
+-PRODUCT_PACKAGES += \
+-    TvSampleLeanbackLauncher
+-endif
+-
+-# TV Specific Packages
+-PRODUCT_PACKAGES += \
+-    LiveTv \
+-    google-tv-pairing-protocol \
+-    LeanbackSampleApp \
+-    tv_input.default \
+-    com.android.media.tv.remoteprovider \
+-    InputDevices
+-
+-PRODUCT_PACKAGES += \
+-    LeanbackIME
+ 
+ ifeq (,$(filter $(TARGET_PRODUCT),yukawa_gms yukawa32_gms yukawa_sei510_gms))
+ PRODUCT_PACKAGES += \
+@@ -166,14 +228,11 @@ PRODUCT_PACKAGES += \
+     TVLauncherNoGms \
+     TVRecommendationsNoGms
+ endif
+-endif
+ 
+ PRODUCT_PACKAGES += \
+     libhidltransport \
+     libhwbinder 
+ 
+-PRODUCT_PROPERTY_OVERRIDES += ro.sf.lcd_density=320
+-
+ PRODUCT_PACKAGES +=  libGLES_mali
+ PRODUCT_PACKAGES +=  libGLES_android
+ 
+@@ -249,7 +308,7 @@ PRODUCT_PACKAGES += \
+     android.hardware.drm-service.widevine \
+     android.hardware.drm-service.clearkey
+ 
+-# CEC
++# CEC: NOT TV ONLY?
+ PRODUCT_PACKAGES += \
+     android.hardware.tv.cec@1.0-impl \
+     android.hardware.tv.cec@1.0-service \
+-- 
+2.25.1
+
